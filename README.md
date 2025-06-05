@@ -2,6 +2,6 @@ streamlit
 xgboost
 scikit-learn
 pandas
-shap
 matplotlib
 joblib
+shap==0.41.0
