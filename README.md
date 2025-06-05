@@ -1,3 +1,6 @@
 streamlit
-pgmpy==0.1.21
+xgboost
+scikit-learn
 pandas
+shap
+matplotlib
