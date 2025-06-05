@@ -1,79 +1,72 @@
-# app.py
 import streamlit as st
 import pandas as pd
-import numpy as np
-import shap
-import joblib
 import xgboost as xgb
 import matplotlib.pyplot as plt
+import joblib
 
-# ─────────────────────────────────────────────
-# Cargar modelo y preprocesadores
-# ─────────────────────────────────────────────
-xgb_model = joblib.load("xgb_model.pkl")
-scaler = joblib.load("scaler.pkl")
-encoder = joblib.load("encoder.pkl")  # Si usaste OneHotEncoding
+# Cargar modelo entrenado
+model = joblib.load("modelo_xgb.pkl")
 
-# ─────────────────────────────────────────────
-# Función para recolectar entrada del usuario
-# ─────────────────────────────────────────────
-def user_input():
-    st.sidebar.header("Datos del paciente")
+# Título de la aplicación
+st.title("Predicción de Enfermedad Cardiovascular con XGBoost")
 
-    age = st.sidebar.slider("Edad", 20, 100, 50)
-    trestbps = st.sidebar.slider("Presión en reposo (mmHg)", 90, 200, 120)
-    chol = st.sidebar.slider("Colesterol (mg/dL)", 100, 600, 240)
-    thalach = st.sidebar.slider("Frecuencia cardiaca máxima", 60, 220, 150)
-    oldpeak = st.sidebar.slider("Oldpeak (ST depresión)", 0.0, 6.0, 1.0)
+# Ingreso de datos por el usuario
+st.sidebar.header("Ingrese los datos del paciente")
 
-    sex = st.sidebar.selectbox("Sexo", ["0", "1"])
-    cp = st.sidebar.selectbox("Tipo de dolor torácico", ["0", "1", "2", "3"])
-    fbs = st.sidebar.selectbox("Glicemia en ayuno >120 mg/dL", ["0", "1"])
-    restecg = st.sidebar.selectbox("ECG en reposo", ["0", "1", "2"])
-    exang = st.sidebar.selectbox("Angina inducida por ejercicio", ["0", "1"])
-    slope = st.sidebar.selectbox("Pendiente del ST", ["0", "1", "2"])
-    ca = st.sidebar.selectbox("N° vasos coloreados", ["0", "1", "2", "3"])
-    thal = st.sidebar.selectbox("Thal", ["0", "1", "2", "3"])
+def user_input_features():
+    age = st.sidebar.slider("Edad", 29, 77, 50)
+    trestbps = st.sidebar.slider("Presión arterial en reposo", 90, 180, 130)
+    chol = st.sidebar.slider("Colesterol sérico", 120, 560, 240)
+    thalach = st.sidebar.slider("Frecuencia cardíaca máxima", 70, 210, 150)
+    oldpeak = st.sidebar.slider("Depresión ST", 0.0, 6.5, 1.0)
+    sex = st.sidebar.selectbox("Sexo", options=["Masculino", "Femenino"])
+    cp = st.sidebar.selectbox("Tipo de dolor torácico", ["Angina típica", "Angina atípica", "No angina", "Asintomático"])
+    fbs = st.sidebar.selectbox("Glicemia en ayuno > 120 mg/dl", ["No", "Sí"])
+    restecg = st.sidebar.selectbox("ECG en reposo", ["Normal", "Anormalidad ST-T", "Hipertrofia ventricular"])
+    exang = st.sidebar.selectbox("Angina inducida por ejercicio", ["No", "Sí"])
+    slope = st.sidebar.selectbox("Pendiente del ST", ["Ascendente", "Plana", "Descendente"])
+    ca = st.sidebar.selectbox("Nº de vasos coloreados", [0, 1, 2, 3])
+    thal = st.sidebar.selectbox("Thal", ["Normal", "Defecto fijo", "Defecto reversible"])
 
     data = {
-        "age": float(age), "trestbps": float(trestbps), "chol": float(chol),
-        "thalach": float(thalach), "oldpeak": float(oldpeak),
-        "sex": sex, "cp": cp, "fbs": fbs, "restecg": restecg,
-        "exang": exang, "slope": slope, "ca": ca, "thal": thal
+        "age": age,
+        "trestbps": trestbps,
+        "chol": chol,
+        "thalach": thalach,
+        "oldpeak": oldpeak,
+        "sex": 1 if sex == "Masculino" else 0,
+        "cp": ["Angina típica", "Angina atípica", "No angina", "Asintomático"].index(cp),
+        "fbs": 1 if fbs == "Sí" else 0,
+        "restecg": ["Normal", "Anormalidad ST-T", "Hipertrofia ventricular"].index(restecg),
+        "exang": 1 if exang == "Sí" else 0,
+        "slope": ["Ascendente", "Plana", "Descendente"].index(slope),
+        "ca": ca,
+        "thal": ["Normal", "Defecto fijo", "Defecto reversible"].index(thal),
     }
 
     return pd.DataFrame([data])
 
-# ─────────────────────────────────────────────
-# Main
-# ─────────────────────────────────────────────
-st.title("🫀 Predicción de Enfermedad Cardiovascular con XGBoost + SHAP")
-
-input_df = user_input()
-
-# Codificar variables categóricas
-X_encoded = encoder.transform(input_df)
-X_scaled = scaler.transform(X_encoded)
+input_df = user_input_features()
 
 # Predicción
-proba = xgb_model.predict_proba(X_scaled)[0][1]
-st.subheader("📊 Probabilidad de enfermedad cardiovascular")
-st.write(f"**{proba*100:.2f}%**")
+prediction_proba = model.predict_proba(input_df)[0, 1]
+prediction_label = "Enfermedad cardiovascular probable" if prediction_proba > 0.5 else "Sin enfermedad cardiovascular"
 
-# Interpretabilidad con SHAP
-explainer = shap.Explainer(xgb_model)
-shap_values = explainer(X_scaled)
+st.subheader("Resultado de la predicción")
+st.write(f"Probabilidad: **{prediction_proba:.2f}** → **{prediction_label}**")
 
-st.subheader("🔍 Explicación de la predicción con SHAP")
+# Gráfico de importancia de variables
+st.subheader("Importancia de las variables (global)")
+importance = model.feature_importances_
+features = model.get_booster().feature_names if model.get_booster().feature_names else input_df.columns
+importancia_df = pd.DataFrame({'feature': features, 'importance': importance})
+importancia_df = importancia_df.sort_values(by='importance', ascending=True)
+
 fig, ax = plt.subplots()
-shap.plots.waterfall(shap_values[0], max_display=10)
+ax.barh(importancia_df['feature'], importancia_df['importance'], color='skyblue')
+ax.set_xlabel('Importancia')
 st.pyplot(fig)
 
-# SHAP bar summary
-st.subheader("📈 Contribuciones globales de las variables")
-fig2, ax2 = plt.subplots()
-shap.plots.bar(shap_values, max_display=10)
-st.pyplot(fig2)
 
 
 
