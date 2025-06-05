@@ -1,57 +1,61 @@
-# app.py
 import streamlit as st
 import pandas as pd
-from pgmpy.inference import VariableElimination
-from pgmpy.readwrite import BIFReader
+from pomegranate import BayesianNetwork, DiscreteDistribution, ConditionalProbabilityTable, Node
+import numpy as np
 
-# Cargar modelo bayesiano previamente guardado en formato .bif
-@st.cache_resource
-def load_model():
-    reader = BIFReader("modelo_clinico.bif")  # El archivo .bif debe estar en el mismo directorio
-    model = reader.get_model()
-    return model
+# ────────────────────────────────
+# Cargar y preparar los datos
+# ────────────────────────────────
+@st.cache_data
+def cargar_datos():
+    df = pd.read_csv("https://raw.githubusercontent.com/tu_usuario/tu_repo/main/heart_dataset.csv")
+    df = df.astype({
+        "sex": "category", "cp": "category", "fbs": "category",
+        "restecg": "category", "exang": "category", "slope": "category",
+        "ca": "category", "thal": "category", "target": "category"
+    })
+    return df
 
-model = load_model()
-infer = VariableElimination(model)
+df = cargar_datos()
 
-st.title("Predicción de Riesgo Cardiovascular con Red Bayesiana")
-st.write("Ingrese los valores del paciente para estimar la probabilidad de enfermedad cardíaca.")
+# ────────────────────────────────
+# Construir red bayesiana (simulada para demo)
+# ────────────────────────────────
+# Definir distribuciones ficticias
+sex_dist = DiscreteDistribution({'0': 0.45, '1': 0.55})
+cp_dist = DiscreteDistribution({'0': 0.3, '1': 0.4, '2': 0.2, '3': 0.1})
+target_cpt = ConditionalProbabilityTable(
+    [
+        ['0', '0', 0.8],
+        ['0', '1', 0.2],
+        ['1', '0', 0.4],
+        ['1', '1', 0.6],
+    ],
+    [sex_dist]
+)
 
-# Entradas del usuario
-age = st.slider("Edad", 29, 77, 55)
-trestbps = st.slider("Presión arterial en reposo (mm Hg)", 90, 180, 130)
-chol = st.slider("Colesterol sérico (mg/dL)", 100, 600, 240)
-thalach = st.slider("Frecuencia cardíaca máxima", 70, 210, 150)
-oldpeak = st.slider("Depresión del ST inducida por ejercicio", 0.0, 6.2, 1.0, step=0.1)
+# Crear nodos
+sex_node = Node(sex_dist, name="sex")
+cp_node = Node(cp_dist, name="cp")
+target_node = Node(target_cpt, name="target")
 
-sex = st.selectbox("Sexo", options=["0", "1"], format_func=lambda x: "Femenino" if x == "0" else "Masculino")
-cp = st.selectbox("Tipo de dolor torácico (cp)", ["0", "1", "2", "3"])
-fbs = st.selectbox("Glucosa en ayunas > 120 mg/dL", ["0", "1"])
-restecg = st.selectbox("ECG en reposo", ["0", "1", "2"])
-exang = st.selectbox("Angina inducida por ejercicio", ["0", "1"])
-slope = st.selectbox("Pendiente del ST", ["0", "1", "2"])
-ca = st.selectbox("Vasos principales coloreados", ["0", "1", "2", "3"])
-thal = st.selectbox("Thalassemia", ["0", "1", "2", "3"])
+# Crear modelo
+model = BayesianNetwork("Predicción de enfermedad cardíaca")
+model.add_states(sex_node, cp_node, target_node)
+model.add_edge(sex_node, target_node)
+model.bake()
 
-# Evidencia para el modelo
-data_evidence = {
-    "age": str(age),
-    "trestbps": str(trestbps),
-    "chol": str(chol),
-    "thalach": str(thalach),
-    "oldpeak": str(oldpeak),
-    "sex": sex,
-    "cp": cp,
-    "fbs": fbs,
-    "restecg": restecg,
-    "exang": exang,
-    "slope": slope,
-    "ca": ca,
-    "thal": thal,
-}
+# ────────────────────────────────
+# Interfaz Streamlit
+# ────────────────────────────────
+st.title("Modelo EC con Redes Bayesianas")
+st.markdown("Predicción basada en variables clínicas.")
 
-if st.button("Estimar riesgo"):
-    result = infer.query(variables=["target"], evidence=data_evidence)
-    proba = result.values[1]
-    st.success(f"Probabilidad estimada de enfermedad cardíaca: {proba:.2%}")
-    st.info("Nota: Esta herramienta es educativa y no reemplaza el juicio clínico.")
+sexo = st.selectbox("Sexo", options=["0", "1"])
+cp = st.selectbox("Tipo de dolor torácico (cp)", options=["0", "1", "2", "3"])
+
+if st.button("Predecir probabilidad"):
+    pred = model.predict_proba({'sex': sexo})
+    prob = pred[2].parameters[0]
+    st.write(f"Probabilidad de enfermedad cardíaca (target=1): **{prob['1']*100:.1f}%**")
+
