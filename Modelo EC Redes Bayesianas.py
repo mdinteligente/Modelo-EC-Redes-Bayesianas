@@ -1,71 +1,57 @@
 import streamlit as st
 import pandas as pd
 import xgboost as xgb
-import matplotlib.pyplot as plt
 import joblib
+import matplotlib.pyplot as plt
 
-# Cargar modelo entrenado
-model = joblib.load("modelo_xgb.pkl")
+# Cargar el modelo entrenado
+modelo = joblib.load("modelo_xgb.pkl")
 
-# Título de la aplicación
-st.title("Predicción de Enfermedad Cardiovascular con XGBoost")
+# Variables esperadas
+input_columns = ['age', 'trestbps', 'chol', 'thalach', 'oldpeak', 'sex', 'cp', 'fbs',
+                 'restecg', 'exang', 'slope', 'ca', 'thal']
 
-# Ingreso de datos por el usuario
-st.sidebar.header("Ingrese los datos del paciente")
+st.title("Predicción de Enfermedad Cardiovascular")
 
-def user_input_features():
-    age = st.sidebar.slider("Edad", 29, 77, 50)
-    trestbps = st.sidebar.slider("Presión arterial en reposo", 90, 180, 130)
-    chol = st.sidebar.slider("Colesterol sérico", 120, 560, 240)
-    thalach = st.sidebar.slider("Frecuencia cardíaca máxima", 70, 210, 150)
-    oldpeak = st.sidebar.slider("Depresión ST", 0.0, 6.5, 1.0)
-    sex = st.sidebar.selectbox("Sexo", options=["Masculino", "Femenino"])
-    cp = st.sidebar.selectbox("Tipo de dolor torácico", ["Angina típica", "Angina atípica", "No angina", "Asintomático"])
-    fbs = st.sidebar.selectbox("Glicemia en ayuno > 120 mg/dl", ["No", "Sí"])
-    restecg = st.sidebar.selectbox("ECG en reposo", ["Normal", "Anormalidad ST-T", "Hipertrofia ventricular"])
-    exang = st.sidebar.selectbox("Angina inducida por ejercicio", ["No", "Sí"])
-    slope = st.sidebar.selectbox("Pendiente del ST", ["Ascendente", "Plana", "Descendente"])
-    ca = st.sidebar.selectbox("Nº de vasos coloreados", [0, 1, 2, 3])
-    thal = st.sidebar.selectbox("Thal", ["Normal", "Defecto fijo", "Defecto reversible"])
+st.markdown("Completa los datos del paciente:")
 
-    data = {
-        "age": age,
-        "trestbps": trestbps,
-        "chol": chol,
-        "thalach": thalach,
-        "oldpeak": oldpeak,
-        "sex": 1 if sex == "Masculino" else 0,
-        "cp": ["Angina típica", "Angina atípica", "No angina", "Asintomático"].index(cp),
-        "fbs": 1 if fbs == "Sí" else 0,
-        "restecg": ["Normal", "Anormalidad ST-T", "Hipertrofia ventricular"].index(restecg),
-        "exang": 1 if exang == "Sí" else 0,
-        "slope": ["Ascendente", "Plana", "Descendente"].index(slope),
-        "ca": ca,
-        "thal": ["Normal", "Defecto fijo", "Defecto reversible"].index(thal),
-    }
+# Entradas numéricas
+age = st.slider("Edad", 29, 77, 55)
+trestbps = st.slider("Presión arterial en reposo (mmHg)", 90, 200, 120)
+chol = st.slider("Colesterol sérico (mg/dL)", 100, 400, 200)
+thalach = st.slider("Frecuencia cardíaca máxima", 70, 210, 150)
+oldpeak = st.slider("Oldpeak (ST depresion)", 0.0, 6.0, 1.0, step=0.1)
 
-    return pd.DataFrame([data])
+# Entradas categóricas
+sex = st.selectbox("Sexo", ['0', '1'])
+cp = st.selectbox("Tipo de dolor torácico (cp)", ['0', '1', '2', '3'])
+fbs = st.selectbox("Glucemia en ayunas >120 mg/dL", ['0', '1'])
+restecg = st.selectbox("Resultados electrocardiográficos en reposo", ['0', '1', '2'])
+exang = st.selectbox("Angina inducida por ejercicio", ['0', '1'])
+slope = st.selectbox("Pendiente del ST", ['0', '1', '2'])
+ca = st.selectbox("Número de vasos coloreados con fluoroscopia", ['0', '1', '2', '3'])
+thal = st.selectbox("Talasemia", ['1', '2', '3'])
 
-input_df = user_input_features()
+# Botón de predicción
+if st.button("Predecir"):
+    datos_usuario = pd.DataFrame([[age, trestbps, chol, thalach, oldpeak, sex, cp, fbs,
+                                    restecg, exang, slope, ca, thal]], columns=input_columns)
+    datos_usuario = datos_usuario.astype(modelo.get_booster().feature_types)
+    prob = modelo.predict_proba(datos_usuario)[0][1]
+    pred = modelo.predict(datos_usuario)[0]
 
-# Predicción
-prediction_proba = model.predict_proba(input_df)[0, 1]
-prediction_label = "Enfermedad cardiovascular probable" if prediction_proba > 0.5 else "Sin enfermedad cardiovascular"
+    st.markdown(f"### Probabilidad de enfermedad cardiovascular: **{prob:.2%}**")
+    st.markdown(f"### Clasificación: {'🟥 Positiva' if pred == 1 else '🟩 Negativa'}")
 
-st.subheader("Resultado de la predicción")
-st.write(f"Probabilidad: **{prediction_proba:.2f}** → **{prediction_label}**")
+    # Importancia de variables
+    st.markdown("#### Importancia de variables en el modelo")
+    importancias = modelo.feature_importances_
+    fig, ax = plt.subplots()
+    ax.barh(input_columns, importancias)
+    ax.set_xlabel("Importancia")
+    ax.set_title("Importancia de cada variable")
+    st.pyplot(fig)
 
-# Gráfico de importancia de variables
-st.subheader("Importancia de las variables (global)")
-importance = model.feature_importances_
-features = model.get_booster().feature_names if model.get_booster().feature_names else input_df.columns
-importancia_df = pd.DataFrame({'feature': features, 'importance': importance})
-importancia_df = importancia_df.sort_values(by='importance', ascending=True)
-
-fig, ax = plt.subplots()
-ax.barh(importancia_df['feature'], importancia_df['importance'], color='skyblue')
-ax.set_xlabel('Importancia')
-st.pyplot(fig)
 
 
 
