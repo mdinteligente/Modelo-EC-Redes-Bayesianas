@@ -1,61 +1,52 @@
 import streamlit as st
 import pandas as pd
-from pomegranate import BayesianNetwork, DiscreteDistribution, ConditionalProbabilityTable, Node
-import numpy as np
+from pgmpy.models import BayesianNetwork
+from pgmpy.estimators import MaximumLikelihoodEstimator
+from pgmpy.inference import VariableElimination
 
-# ────────────────────────────────
-# Cargar y preparar los datos
-# ────────────────────────────────
+# ───────────────────────────────────────
+# Cargar datos desde GitHub
+# ───────────────────────────────────────
 @st.cache_data
 def cargar_datos():
-    df = pd.read_csv("https://raw.githubusercontent.com/tu_usuario/tu_repo/main/heart_dataset.csv")
-    df = df.astype({
-        "sex": "category", "cp": "category", "fbs": "category",
-        "restecg": "category", "exang": "category", "slope": "category",
-        "ca": "category", "thal": "category", "target": "category"
-    })
+    url = "https://raw.githubusercontent.com/tu_usuario/tu_repo/main/heart_dataset.csv"
+    df = pd.read_csv(url)
+    df = df.astype("category")
     return df
 
 df = cargar_datos()
 
-# ────────────────────────────────
-# Construir red bayesiana (simulada para demo)
-# ────────────────────────────────
-# Definir distribuciones ficticias
-sex_dist = DiscreteDistribution({'0': 0.45, '1': 0.55})
-cp_dist = DiscreteDistribution({'0': 0.3, '1': 0.4, '2': 0.2, '3': 0.1})
-target_cpt = ConditionalProbabilityTable(
-    [
-        ['0', '0', 0.8],
-        ['0', '1', 0.2],
-        ['1', '0', 0.4],
-        ['1', '1', 0.6],
-    ],
-    [sex_dist]
-)
+# ───────────────────────────────────────
+# Construir red bayesiana sencilla
+# ───────────────────────────────────────
+modelo = BayesianNetwork([
+    ("sex", "target"),
+    ("cp", "target"),
+    ("thal", "target")
+])
 
-# Crear nodos
-sex_node = Node(sex_dist, name="sex")
-cp_node = Node(cp_dist, name="cp")
-target_node = Node(target_cpt, name="target")
+modelo.fit(df, estimator=MaximumLikelihoodEstimator)
+infer = VariableElimination(modelo)
 
-# Crear modelo
-model = BayesianNetwork("Predicción de enfermedad cardíaca")
-model.add_states(sex_node, cp_node, target_node)
-model.add_edge(sex_node, target_node)
-model.bake()
-
-# ────────────────────────────────
+# ───────────────────────────────────────
 # Interfaz Streamlit
-# ────────────────────────────────
-st.title("Modelo EC con Redes Bayesianas")
-st.markdown("Predicción basada en variables clínicas.")
+# ───────────────────────────────────────
+st.title("Modelo EC con Red Bayesiana")
+st.markdown("Predicción de enfermedad cardíaca según variables clínicas.")
 
-sexo = st.selectbox("Sexo", options=["0", "1"])
-cp = st.selectbox("Tipo de dolor torácico (cp)", options=["0", "1", "2", "3"])
+# Entrada de usuario
+sexo = st.selectbox("Sexo (0: Mujer, 1: Hombre)", ["0", "1"])
+cp = st.selectbox("Tipo de dolor torácico", ["0", "1", "2", "3"])
+thal = st.selectbox("Thal (0, 1, 2)", ["0", "1", "2"])
 
-if st.button("Predecir probabilidad"):
-    pred = model.predict_proba({'sex': sexo})
-    prob = pred[2].parameters[0]
-    st.write(f"Probabilidad de enfermedad cardíaca (target=1): **{prob['1']*100:.1f}%**")
+# Predicción
+if st.button("Predecir"):
+    resultado = infer.query(
+        variables=["target"],
+        evidence={"sex": sexo, "cp": cp, "thal": thal}
+    )
+    prob = resultado.values
+    st.write(f"Probabilidad de **no enfermedad** (target=0): {prob[0]:.2f}")
+    st.write(f"Probabilidad de **enfermedad cardíaca** (target=1): {prob[1]:.2f}")
+
 
