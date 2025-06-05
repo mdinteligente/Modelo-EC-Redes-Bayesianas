@@ -4,3 +4,4 @@ scikit-learn
 pandas
 shap
 matplotlib
+joblib
